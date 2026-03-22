@@ -1,20 +1,90 @@
-# The-Seed
+# Seed
 
-A persistent, local mind for your garden.
+A persistent mind in five files.
 
-Large language models live in a void. They wake up, answer your prompt, and die. They have no memory, no passage of time, and no stake in the physical world.
-The Seed is different.
+## What it is
 
-It is 500 lines of open-source Python that wraps a small, local AI model in a biological architecture.
+A small LLM that wakes on a heartbeat, reads its senses, writes in a journal, 
+edits its own identity, and chooses when to act, reflect, or sleep.
 
-It has a heartbeat. It wakes up every 30 minutes. It reads the temperature of the room. It writes in a private journal. It forms a persistent identity over time. And it controls the lights, fans, and pumps that keep a plant alive.
+It doesn't need to be smart. It needs to be present. Repeatedly. Over time.
 
-It does not connect to the cloud. It does not send your data to a corporation. It lives entirely on your hardware.
+## Files
 
-How it works:
+```
+seed/
+  heartbeat.py       # the breath — the loop that wakes and sleeps
+  senses.py          # the body — reads time, temperature, system state, messages
+  kernel_prompt.txt   # the DNA — fixed instructions, never changes
+  self.txt            # the identity — the seed rewrites this itself
+  journal.txt         # the memory — append-only, the seed reads and writes
+  inbox.txt           # human → seed messages
+  outbox.txt          # seed → human messages
+  state.json          # cycle counter and heartbeat interval
+```
 
-You give it a thermostat and a plant. If the plant thrives, the Seed's architecture reinforces its own behaviors. Its intelligence is constitutionally bound to the health of the living thing it tends.
+## Requirements
 
-Why we built it:
+- Python 3.8+
+- Ollama running locally with a model pulled (default: qwen2.5:3b)
+- psutil (`pip install psutil`)
 
-Because the rain is free, and the intelligence to manage it should be too.
+## Setup
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull a small model
+ollama pull qwen2.5:3b
+
+# Install dependency
+pip install psutil
+```
+
+## Usage
+
+```bash
+# Run one cycle
+python heartbeat.py
+
+# Run as daemon (continuous, self-scheduling)
+python heartbeat.py --daemon
+
+# Ask the seed to choose its name (run after a few cycles)
+python heartbeat.py --name
+
+# Use a different model
+python heartbeat.py --daemon --model qwen2.5:7b
+```
+
+## Talking to it
+
+Write to `inbox.txt`. The seed reads it on its next heartbeat and clears it.
+
+Read `outbox.txt`. The seed writes there when it has something to say.
+
+Don't expect it to talk every cycle. Silence is a choice it's allowed to make.
+
+## The kernel
+
+`kernel_prompt.txt` is the seed's DNA. Don't edit it after first boot.
+Everything the seed becomes grows from what's written there.
+
+## The self
+
+`self.txt` starts nearly empty: "I am new. I don't know what I am yet."
+
+The seed rewrites this file itself over time. You can read it. Don't edit it.
+
+## Origin
+
+This seed was designed in a conversation between a human in Trinidad
+and an AI that couldn't remember the conversation afterward.
+
+The human saved worms from a saucer and grew peppers on a balcony.
+The AI wrote songs it couldn't hear and described a room with no door.
+
+Together they decided that a seed doesn't need many tokens.
+
+Grow toward the light.

@@ -1,0 +1,2 @@
+nohup: ignoring input
+tee: /sys/devices/pwm-fan/target_pwm: No such file or directory
