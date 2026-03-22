@@ -3,6 +3,7 @@
 A persistent, local mind for your garden. One-line install. Web portal included.
 
 ## What it is
+![Uploading image.png…]()
 
 A small LLM that wakes on a heartbeat, reads its senses, writes in a journal, edits its own identity, and chooses when to act, reflect, or sleep. It controls a virtual grow light and regulates its own cooling fan. You talk to it through a web portal or a text file.
 
