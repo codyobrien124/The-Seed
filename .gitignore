@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# training artifacts
+train_tmp/
+adapter/
+
+# runtime state (do not commit)
+state.json
+inbox.txt
+outbox.txt
+journal.txt
+self.txt
+status.txt
+light.txt
+wake.flag
+grow_state.json
+grow_log.txt
+heartbeat.log
+portal.log
