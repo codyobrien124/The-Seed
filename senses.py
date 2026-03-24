@@ -35,9 +35,9 @@ def read_all():
     if os.path.exists(inbox_path):
         with open(inbox_path) as f:
             msg = f.read().strip()
+        with open(inbox_path, "w") as f:
+            f.write("")
         if msg:
             readings.append(f"Message from human: {msg}")
-            with open(inbox_path, "w") as f:
-                f.write("")
                 
     return "\n".join(readings)

@@ -105,10 +105,12 @@ def run_cycle(model):
 
     set_status(f"Thinking... (Cycle {state['cycle']})")
 
+    recent = state.get("recent_choices", [])
     prompt = (
         f"=== CYCLE {state['cycle']} ===\nTime: {now}\n\n"
         f"=== IDENTITY ===\n{load_file(SELF_PATH)}\n\n"
         f"=== TOOLKIT ===\n{load_file(CAPABILITIES_PATH)}\n\n"
+        f"=== RECENT CHOICES ===\n{', '.join(recent) if recent else 'none'}\n\n"
         f"=== RECENT JOURNAL ===\n{load_file(JOURNAL_PATH)[-3000:]}\n\n"
         f"=== SENSES ===\n{senses.read_all()}\n\n"
         f"=== DECISION ===\nChoose: act, reflect, learn, or sleep. Respond with JSON only."
@@ -132,6 +134,7 @@ def run_cycle(model):
         resp = {"choice": "reflect", "journal_entry": f"Malformed thoughts. Raw: {raw_resp[:200]}", "next_heartbeat_minutes": 30}
 
     choice = resp.get("choice", "sleep")
+    state["recent_choices"] = (state.get("recent_choices", []) + [choice])[-5:]
 
     experiment = resp.get("experiment")
     experiment_line = f"\nExperiment: {experiment}" if experiment else ""
@@ -161,6 +164,9 @@ def daemon(model):
         state = run_cycle(model)
         sleep_mins = state["next_heartbeat_minutes"]
         think_time = state.get("last_think_time", 0)
+        sleep_until = (datetime.datetime.now() + datetime.timedelta(minutes=sleep_mins)).isoformat()[:19]
+        state["sleep_until"] = sleep_until
+        save_state(state)
         set_status(f"Sleeping for {sleep_mins}m (Last thought took: {think_time:.1f}s)")
         for _ in range(sleep_mins * 60):
             if os.path.exists(INBOX_PATH) and os.path.getsize(INBOX_PATH) > 0:
