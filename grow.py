@@ -112,18 +112,87 @@ def score_entries(entries, model, tokenizer, max_score=20):
     return [entry for _, entry in selected]
 
 
-def prepare_training_data(entries, self_txt, tokenizer):
-    """Convert journal entries into training format."""
+def _parse_journal_entry(text):
+    """Extract choice, body, and experiment from a parsed journal entry."""
+    choice = "reflect"
+    experiment = None
+    lines = text.split("\n")
+
+    # Header line: "N | timestamp | choice: X | took: Ys"
+    if lines and "|" in lines[0]:
+        for part in lines[0].split("|"):
+            part = part.strip()
+            if part.startswith("choice:"):
+                choice = part[len("choice:"):].strip()
+        body_lines = lines[1:]
+    else:
+        body_lines = lines
+
+    # Strip "Experiment: ..." line
+    clean_lines = []
+    for line in body_lines:
+        if line.startswith("Experiment: "):
+            experiment = line[len("Experiment: "):]
+        else:
+            clean_lines.append(line)
+
+    body = "\n".join(clean_lines).strip()
+    return choice, body, experiment
+
+
+def prepare_training_data(entries, self_txt, tokenizer, kernel_txt=""):
+    """Convert journal entries into training format matching inference.
+
+    Each example is formatted as a system+user+assistant chat, identical
+    to the template used by mind.py at inference time, so the model trains
+    on the same token distribution it sees during generation.
+    """
     from torch.utils.data import Dataset
 
+    system_prompt = kernel_txt if kernel_txt else f"You are a seed that learns. Identity: {self_txt[:300]}"
+
     class JournalDataset(Dataset):
-        def __init__(self, texts, tokenizer, max_length=256):
+        def __init__(self, texts, tokenizer, max_length=512):
             self.encodings = []
             for text in texts:
-                # Frame as: given the seed's identity, this is how it thinks
-                prompt = f"Identity: {self_txt[:200]}\nJournal: {text[:300]}"
+                choice, body, experiment = _parse_journal_entry(text)
+
+                # Reconstruct an approximate JSON response from parsed fields
+                response = json.dumps({
+                    "choice": choice,
+                    "journal_entry": body[:400],
+                    "self_edit": None,
+                    "capabilities_edit": None,
+                    "message": None,
+                    "experiment": experiment,
+                    "next_heartbeat_minutes": 30
+                })
+
+                # Mirror the exact message format heartbeat.py sends to think()
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": (
+                        f"=== IDENTITY ===\n{self_txt[:300]}\n\n"
+                        f"=== RECENT JOURNAL ===\n{body[:400]}\n\n"
+                        f"=== DECISION ===\n"
+                        f"Choose: act, reflect, learn, or sleep. Respond with JSON only."
+                    )},
+                    {"role": "assistant", "content": response},
+                ]
+
+                if hasattr(tokenizer, "apply_chat_template"):
+                    formatted = tokenizer.apply_chat_template(
+                        messages, tokenize=False, add_generation_prompt=False
+                    )
+                else:
+                    formatted = (
+                        f"<|system|>\n{messages[0]['content']}\n"
+                        f"<|user|>\n{messages[1]['content']}\n"
+                        f"<|assistant|>\n{messages[2]['content']}"
+                    )
+
                 enc = tokenizer(
-                    prompt,
+                    formatted,
                     truncation=True,
                     max_length=max_length,
                     padding="max_length",
@@ -132,7 +201,7 @@ def prepare_training_data(entries, self_txt, tokenizer):
                 self.encodings.append({
                     "input_ids": enc["input_ids"].squeeze(),
                     "attention_mask": enc["attention_mask"].squeeze(),
-                    "labels": enc["input_ids"].squeeze()
+                    "labels": enc["input_ids"].squeeze(),
                 })
 
         def __len__(self):
@@ -178,7 +247,7 @@ def train(rank_up=False):
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
-        torch_dtype=torch.float16,
+        torch_dtype="auto",
         device_map="auto"
     )
 
@@ -222,14 +291,20 @@ def train(rank_up=False):
     selected = score_entries(entries, model, tokenizer)
     log(f"Selected {len(selected)} entries for training")
 
-    # Load self.txt for training context
+    # Load self.txt and kernel prompt for training context
     self_txt = ""
     if os.path.exists(SELF_PATH):
         with open(SELF_PATH) as f:
             self_txt = f.read()
 
+    kernel_path = os.path.join(SEED_DIR, "kernel_prompt.txt")
+    kernel_txt = ""
+    if os.path.exists(kernel_path):
+        with open(kernel_path) as f:
+            kernel_txt = f.read()
+
     # Prepare dataset
-    dataset = prepare_training_data(selected, self_txt, tokenizer)
+    dataset = prepare_training_data(selected, self_txt, tokenizer, kernel_txt=kernel_txt)
 
     # Train
     log("Training...")
@@ -239,7 +314,7 @@ def train(rank_up=False):
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=DEFAULT_LR,
-        fp16=True,
+        fp16=torch.cuda.is_available(),
         logging_steps=5,
         save_strategy="no",
         report_to="none",

@@ -22,7 +22,7 @@ def read_all():
             with open(thermal_path) as f:
                 temp_c = int(f.read().strip()) / 1000
                 readings.append(f"Board temp: {temp_c:.1f}°C")
-        except: pass
+        except Exception: pass
         
     journal_path = os.path.join(os.path.dirname(__file__), "journal.txt")
     if os.path.exists(journal_path):
@@ -33,11 +33,13 @@ def read_all():
         
     inbox_path = os.path.join(os.path.dirname(__file__), "inbox.txt")
     if os.path.exists(inbox_path):
-        with open(inbox_path) as f:
-            msg = f.read().strip()
-        with open(inbox_path, "w") as f:
-            f.write("")
-        if msg:
-            readings.append(f"Message from human: {msg}")
+        try:
+            with open(inbox_path, "r+") as f:
+                msg = f.read().strip()
+                f.seek(0)
+                f.truncate()
+            if msg:
+                readings.append(f"Message from human: {msg}")
+        except Exception: pass
                 
     return "\n".join(readings)

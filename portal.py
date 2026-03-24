@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, redirect, url_for, Response
+from flask import Flask, request, render_template_string, Response
 import os, datetime, json
 
 app = Flask(__name__)
@@ -29,7 +29,8 @@ HTML = """
         h3 { color: #4caf50; margin-bottom: 5px; }
         #status-bar { background: #2c2c2c; padding: 10px; text-align: center; font-weight: bold; font-size: 1.1em; border-radius: 5px; margin-bottom: 6px; border: 1px solid #4caf50; color: #81c784; }
         #cycle-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; color: #888; border-radius: 5px; margin-bottom: 6px; border: 1px solid #2a2a2a; }
-        #choices-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; border-radius: 5px; margin-bottom: 20px; border: 1px solid #2a2a2a; }
+        #choices-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; border-radius: 5px; margin-bottom: 6px; border: 1px solid #2a2a2a; }
+        #grow-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.8em; color: #666; border-radius: 5px; margin-bottom: 20px; border: 1px solid #2a2a2a; }
     </style>
     <script>
         var sleepUntil = null;
@@ -76,19 +77,85 @@ HTML = """
             }
         }
 
-        function scrollBoxes() {
-            document.querySelectorAll('.box').forEach(function(b) { b.scrollTop = b.scrollHeight; });
+        function scrollToBottom(el) {
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function smartScroll(el) {
+            var nearBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 40;
+            if (nearBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        function fetchGrowState() {
+            fetch('/grow_state').then(r => r.json()).then(data => {
+                var bar = document.getElementById('grow-bar');
+                if (!bar || !data.train_count) return;
+                var parts = ['Adapter rank ' + data.current_rank, 'Trained ' + data.train_count + 'x'];
+                if (data.last_loss != null) parts.push('Loss ' + data.last_loss.toFixed(4));
+                if (data.last_train) {
+                    var d = new Date(data.last_train);
+                    parts.push('Last: ' + d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
+                }
+                bar.innerText = parts.join(' | ');
+            });
+        }
+
+        function wake() {
+            fetch('/wake', {method: 'POST'});
+        }
+
+        function sendMessage() {
+            var ta = document.getElementById('send-textarea');
+            var btn = document.getElementById('send-btn');
+            var msg = ta.value.trim();
+            if (!msg) return;
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+            fetch('/send', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'message=' + encodeURIComponent(msg)
+            }).then(r => r.json()).then(function() {
+                ta.value = '';
+                btn.disabled = false;
+                btn.innerText = 'Send & Wake';
+                fetchContent();
+            }).catch(function() {
+                btn.disabled = false;
+                btn.innerText = 'Send & Wake';
+            });
+        }
+
+        function fetchContent() {
+            fetch('/content').then(r => r.json()).then(data => {
+                var boxes = {
+                    'box-outbox': data.outbox,
+                    'box-identity': data.self_txt,
+                    'box-toolkit': data.capabilities_txt,
+                    'box-journal': data.journal
+                };
+                Object.keys(boxes).forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el && el.innerText !== boxes[id]) {
+                        el.innerText = boxes[id];
+                        smartScroll(el);
+                    }
+                });
+            });
         }
 
         function init() {
             fetchStatus();
             fetchState();
-            scrollBoxes();
+            fetchGrowState();
+            document.querySelectorAll('.box').forEach(scrollToBottom);
         }
 
         setInterval(fetchStatus, 2000);
         setInterval(fetchState, 5000);
         setInterval(updateCycleBar, 1000);
+        setInterval(fetchContent, 10000);
+        setInterval(fetchGrowState, 30000);
     </script>
 </head>
 <body onload="init()">
@@ -96,23 +163,20 @@ HTML = """
     <div id="status-bar">Loading status...</div>
     <div id="cycle-bar">Loading...</div>
     <div id="choices-bar"></div>
+    <div id="grow-bar"></div>
 
-    <form method="POST" action="/wake" style="margin-bottom: 10px;">
-        <button type="submit" style="background: #1565c0;">Wake Up</button>
-    </form>
+    <button onclick="wake()" style="background: #1565c0; margin-bottom: 10px;">Wake Up</button>
     <h3>Message to Inbox</h3>
-    <form method="POST" action="/send">
-        <textarea name="message" rows="3" placeholder="Wake Stan up..."></textarea>
-        <button type="submit">Send & Wake</button>
-    </form>
+    <textarea id="send-textarea" rows="3" placeholder="Message Stan..."></textarea>
+    <button id="send-btn" onclick="sendMessage()">Send & Wake</button>
     <h3>Conversation Log</h3>
-    <div class="box">{{ outbox }}</div>
+    <div class="box" id="box-outbox">{{ outbox }}</div>
     <h3>Identity (self.txt)</h3>
-    <div class="box">{{ self_txt }}</div>
+    <div class="box" id="box-identity">{{ self_txt }}</div>
     <h3>Toolkit (capabilities.txt)</h3>
-    <div class="box">{{ capabilities_txt }}</div>
+    <div class="box" id="box-toolkit">{{ capabilities_txt }}</div>
     <h3>Recent Journal</h3>
-    <div class="box">{{ journal }}</div>
+    <div class="box" id="box-journal">{{ journal }}</div>
 </body>
 </html>
 """
@@ -148,10 +212,32 @@ def state():
         }), mimetype="application/json")
     return Response(json.dumps({"cycle": 0, "last_think_time": 0, "sleep_until": "", "recent_choices": []}), mimetype="application/json")
 
+@app.route('/grow_state')
+def grow_state_route():
+    path = os.path.join(SEED_DIR, "grow_state.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+    else:
+        data = {"current_rank": 2, "train_count": 0, "total_entries_trained": 0}
+    return Response(json.dumps(data), mimetype="application/json")
+
+
+@app.route('/content')
+def content():
+    j = read_file(PATHS["journal"])
+    return Response(json.dumps({
+        "outbox": read_file(PATHS["outbox"]) or "(Empty)",
+        "self_txt": read_file(PATHS["self"]) or "(Empty)",
+        "capabilities_txt": read_file(PATHS["capabilities"]) or "(Empty)",
+        "journal": (j[-3000:] if len(j) > 3000 else j) or "(Empty)",
+    }), mimetype="application/json")
+
+
 @app.route('/wake', methods=['POST'])
 def wake():
     with open(PATHS["inbox"], 'w') as f: f.write(" ")
-    return redirect(url_for('home'))
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
 
 @app.route('/send', methods=['POST'])
 def send_message():
@@ -159,7 +245,7 @@ def send_message():
     if msg:
         with open(PATHS["inbox"], 'w') as f: f.write(msg)
         with open(PATHS["outbox"], 'a') as f: f.write(f"[{datetime.datetime.now().isoformat()[:19]}] You: {msg}\n")
-    return redirect(url_for('home'))
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
 
 if __name__ == '__main__':
     from waitress import serve

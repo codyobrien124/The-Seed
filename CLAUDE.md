@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-The Seed is a persistent, local AI mind that runs on a heartbeat loop. It reads environmental senses, writes in a journal, rewrites its own identity, and controls a virtual grow light and cooling fan. It communicates with a human via `inbox.txt`/`outbox.txt` and a web portal. It is designed for low-powered hardware (e.g., Jetson Nano).
+The Seed is a persistent, local AI mind that runs on a heartbeat loop. It reads environmental senses, writes in a journal, and rewrites its own identity. It communicates with a human via `inbox.txt`/`outbox.txt` and a web portal. It is designed for low-powered hardware (e.g., Jetson Nano).
 
 ## Running the system
 
@@ -16,10 +16,10 @@ nohup python3 heartbeat.py > heartbeat.log 2>&1 &
 nohup python3 portal.py > portal.log 2>&1 &
 ```
 
-Prerequisites: Ollama running locally with `qwen3:4b` pulled, plus `psutil flask waitress` installed.
+Prerequisites: Ollama running locally with `qwen3:8b` pulled, plus `psutil flask waitress` installed.
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3:8b
 pip install psutil flask waitress
 ```
 
@@ -40,24 +40,24 @@ Requires `torch transformers peft`. The heartbeat auto-triggers growth every 50 
 
 ## Architecture
 
-The system is entirely file-based. No database. No network services beyond Ollama and the Open-Meteo weather API.
+The system is entirely file-based. No database. No network services beyond Ollama.
 
 **Core loop (`heartbeat.py`):**
 1. Reads `kernel_prompt.txt` (fixed system prompt), `self.txt` (mutable identity), `journal.txt` (recent 3000 chars), and `senses.py` output
 2. Calls `think()` which prefers the grown local adapter (`mind.py`) over Ollama, falling back if unavailable
 3. Parses a JSON response from the LLM — strips `<think>` tags, extracts `{...}` block robustly
-4. Acts on the JSON: appends to journal, optionally rewrites `self.txt`, writes to `outbox.txt`, sets `light.txt` (ON/OFF), sets fan PWM via sysfs, schedules next wakeup
+4. Acts on the JSON: appends to journal, optionally rewrites `self.txt`, writes to `outbox.txt`, schedules next wakeup
 5. Every 50 cycles, calls `grow.py` to fine-tune the LoRA adapter on journal entries
 
 **LLM response schema** (defined in `kernel_prompt.txt`):
 ```json
 {
-  "choice": "act|reflect|sleep",
+  "choice": "act|reflect|learn|sleep",
   "journal_entry": "...",
   "self_edit": "new self.txt content or null",
+  "capabilities_edit": "new capabilities.txt content or null",
   "message": "message to human or null",
-  "light": "ON|OFF|UNCHANGED",
-  "fan_speed": 25-75,
+  "experiment": "description of experiment if choice is learn, or null",
   "next_heartbeat_minutes": 1-1440
 }
 ```
@@ -66,7 +66,7 @@ The system is entirely file-based. No database. No network services beyond Ollam
 
 **Growth (`grow.py`):** Scores journal entries by perplexity (mix of familiar + novel), fine-tunes `Qwen/Qwen2.5-0.5B-Instruct` with a LoRA adapter saved to `./adapter/`. Adapter rank starts at 2 and can be incremented with `--rank-up`.
 
-**Senses (`senses.py`):** Returns a newline-joined string of: time/day/hour, sun up/down, CPU/RAM/disk%, board temperature (from `/sys/devices/virtual/thermal/thermal_zone0/temp`), fan PWM (from `/sys/devices/pwm-fan/target_pwm`), journal stats, inbox message (and clears it), grow light state, and current weather from Open-Meteo (hardcoded to Trinidad coordinates: 10.66, -61.51).
+**Senses (`senses.py`):** Returns a newline-joined string of: time/day/hour, sun up/down, CPU/RAM/disk%, board temperature (from `/sys/devices/virtual/thermal/thermal_zone0/temp`), journal stats, and inbox message (cleared on read).
 
 **Portal (`portal.py`):** Single-page Flask app served via Waitress on port 5001. Polls `/status` every 2 seconds. Sends messages by writing to `inbox.txt`.
 
@@ -79,7 +79,6 @@ The system is entirely file-based. No database. No network services beyond Ollam
 | `state.json` | Cycle counter and next heartbeat interval |
 | `inbox.txt` | Human → seed (cleared on read by senses.py) |
 | `outbox.txt` | Seed → human |
-| `light.txt` | Virtual grow light state (`ON`/`OFF`) |
 | `status.txt` | Current status shown in portal |
 | `adapter/` | LoRA adapter weights (created by grow.py) |
 | `grow_state.json` | LoRA rank, training count, last loss |
@@ -87,6 +86,4 @@ The system is entirely file-based. No database. No network services beyond Ollam
 ## Key constraints
 
 - `kernel_prompt.txt` is the fixed DNA — do not edit it after first boot.
-- `patch.py` and `add_light.py` are one-time migration scripts from earlier versions. They have already been applied to the current codebase.
-- The fan actuation writes to sysfs via `os.system("echo ... | sudo tee ...")` — only meaningful on hardware with a PWM fan (e.g., Jetson).
-- Weather coordinates are hardcoded to Trinidad in `senses.py:9`.
+- `patch.py` is a one-time migration script from an earlier version. It has already been applied to the current codebase.
