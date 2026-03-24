@@ -12,7 +12,7 @@ STATE_PATH = os.path.join(SEED_DIR, "state.json")
 STATUS_PATH = os.path.join(SEED_DIR, "status.txt")
 CAPABILITIES_PATH = os.path.join(SEED_DIR, "capabilities.txt")
 
-DEFAULT_HB = 30
+DEFAULT_HB = 5
 DEFAULT_MODEL = "qwen3:8b"
 URL = "http://localhost:11434"
 GROW_EVERY = 50  # run grow loop every N cycles
@@ -110,8 +110,16 @@ def run_cycle(model):
     set_status(f"Thinking... (Cycle {state['cycle']})")
 
     recent = state.get("recent_choices", [])
+    last_sleep = state.get("last_sleep_mins")
+    wake_reason = state.get("last_wake_reason", "timer")
+    if last_sleep is not None:
+        wake_word = "a message from the human" if wake_reason == "inbox" else "your sleep timer"
+        sleep_ctx = f"You slept {last_sleep:.1f} minutes and were woken by {wake_word}.\n\n"
+    else:
+        sleep_ctx = ""
     prompt = (
         f"=== CYCLE {state['cycle']} ===\nTime: {now}\n\n"
+        f"{sleep_ctx}"
         f"=== IDENTITY ===\n{load_file(SELF_PATH)}\n\n"
         f"=== TOOLKIT ===\n{load_file(CAPABILITIES_PATH)}\n\n"
         f"=== RECENT CHOICES ===\n{', '.join(recent) if recent else 'none'}\n\n"
@@ -152,12 +160,34 @@ def run_cycle(model):
     if resp.get("message"):
         append_file(OUTBOX_PATH, f"[{now}] TriniSeed: {resp['message']}\n")
 
-    state["next_heartbeat_minutes"] = max(1, min(1440, resp.get("next_heartbeat_minutes", DEFAULT_HB)))
+    state["next_heartbeat_minutes"] = max(1, min(60, resp.get("next_heartbeat_minutes", DEFAULT_HB)))
     save_state(state)
 
     maybe_grow(state["cycle"])
 
     return state
+
+def _bg_grow(state):
+    """Grow during sleep if enough time has passed since last background growth."""
+    now_ts = time.time()
+    last_bg = state.get("last_bg_grow_time", 0)
+    if now_ts - last_bg < 3600:  # throttle: at most once per hour
+        return state
+    try:
+        import grow
+        entries = grow.get_journal_entries()
+        if len(entries) < 5:
+            return state
+        set_status("Growing during sleep...")
+        grow.train()
+        append_file(JOURNAL_PATH, f"\n--- background growth during sleep ---\nAdapter trained on {len(entries)} journal entries.\n")
+        state["last_bg_grow_time"] = now_ts
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  Background grow error: {e}")
+    return state
+
 
 def daemon(model):
     if not os.path.exists(INBOX_PATH):
@@ -171,13 +201,28 @@ def daemon(model):
         sleep_until = (datetime.datetime.now() + datetime.timedelta(minutes=sleep_mins)).isoformat()[:19]
         state["sleep_until"] = sleep_until
         save_state(state)
+
+        # Background growth during longer sleep cycles
+        if sleep_mins >= 20:
+            state = _bg_grow(state)
+            save_state(state)
+            set_status(f"Sleeping for {sleep_mins}m (Last thought took: {think_time:.1f}s)")
+
         set_status(f"Sleeping for {sleep_mins}m (Last thought took: {think_time:.1f}s)")
+        sleep_start = time.time()
+        woke_early = False
         for _ in range(sleep_mins * 60):
             if os.path.exists(INBOX_PATH) and os.path.getsize(INBOX_PATH) > 0:
                 set_status("Waking up early (Message received)...")
+                woke_early = True
                 time.sleep(2)
                 break
             time.sleep(1)
+
+        actual_sleep = (time.time() - sleep_start) / 60
+        state["last_sleep_mins"] = round(actual_sleep, 1)
+        state["last_wake_reason"] = "inbox" if woke_early else "timer"
+        save_state(state)
 
 if __name__ == "__main__":
     daemon(DEFAULT_MODEL)
