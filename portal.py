@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, redirect, url_for, Response
+from flask import Flask, request, render_template_string, Response
 import os, datetime, json
 
 app = Flask(__name__)
@@ -100,6 +100,32 @@ HTML = """
             });
         }
 
+        function wake() {
+            fetch('/wake', {method: 'POST'});
+        }
+
+        function sendMessage() {
+            var ta = document.getElementById('send-textarea');
+            var btn = document.getElementById('send-btn');
+            var msg = ta.value.trim();
+            if (!msg) return;
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+            fetch('/send', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'message=' + encodeURIComponent(msg)
+            }).then(r => r.json()).then(function() {
+                ta.value = '';
+                btn.disabled = false;
+                btn.innerText = 'Send & Wake';
+                fetchContent();
+            }).catch(function() {
+                btn.disabled = false;
+                btn.innerText = 'Send & Wake';
+            });
+        }
+
         function fetchContent() {
             fetch('/content').then(r => r.json()).then(data => {
                 var boxes = {
@@ -139,14 +165,10 @@ HTML = """
     <div id="choices-bar"></div>
     <div id="grow-bar"></div>
 
-    <form method="POST" action="/wake" style="margin-bottom: 10px;">
-        <button type="submit" style="background: #1565c0;">Wake Up</button>
-    </form>
+    <button onclick="wake()" style="background: #1565c0; margin-bottom: 10px;">Wake Up</button>
     <h3>Message to Inbox</h3>
-    <form method="POST" action="/send">
-        <textarea name="message" rows="3" placeholder="Wake Stan up..."></textarea>
-        <button type="submit">Send & Wake</button>
-    </form>
+    <textarea id="send-textarea" rows="3" placeholder="Message Stan..."></textarea>
+    <button id="send-btn" onclick="sendMessage()">Send & Wake</button>
     <h3>Conversation Log</h3>
     <div class="box" id="box-outbox">{{ outbox }}</div>
     <h3>Identity (self.txt)</h3>
@@ -215,7 +237,7 @@ def content():
 @app.route('/wake', methods=['POST'])
 def wake():
     with open(PATHS["inbox"], 'w') as f: f.write(" ")
-    return redirect(url_for('home'))
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
 
 @app.route('/send', methods=['POST'])
 def send_message():
@@ -223,7 +245,7 @@ def send_message():
     if msg:
         with open(PATHS["inbox"], 'w') as f: f.write(msg)
         with open(PATHS["outbox"], 'a') as f: f.write(f"[{datetime.datetime.now().isoformat()[:19]}] You: {msg}\n")
-    return redirect(url_for('home'))
+    return Response(json.dumps({"ok": True}), mimetype="application/json")
 
 if __name__ == '__main__':
     from waitress import serve
