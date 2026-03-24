@@ -1,29 +1,6 @@
 import datetime
 import os
 import psutil
-import urllib.request
-import json
-
-def get_weather():
-    try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=10.66&longitude=-61.51&current=temperature_2m,relative_humidity_2m,weather_code"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Seed/1.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            current = data['current']
-            temp = current['temperature_2m']
-            humidity = current['relative_humidity_2m']
-            code = current['weather_code']
-            
-            conditions = "Clear/Cloudy"
-            if code in [0, 1]: conditions = "Clear skies"
-            elif code in [2, 3]: conditions = "Partly cloudy"
-            elif 50 <= code <= 69: conditions = "Raining"
-            elif 80 <= code <= 99: conditions = "Heavy Rain / Storm"
-            
-            return f"Outside Weather: {temp}°C, Humidity: {humidity}%, Conditions: {conditions}"
-    except Exception:
-        return "Outside Weather: unknown (network error)"
 
 def read_all():
     readings = []
@@ -47,15 +24,6 @@ def read_all():
                 readings.append(f"Board temp: {temp_c:.1f}°C")
         except: pass
         
-    fan_path = "/sys/devices/pwm-fan/target_pwm"
-    if os.path.exists(fan_path):
-        try:
-            with open(fan_path) as f:
-                pwm_val = int(f.read().strip())
-                fan_percent = int((pwm_val / 255.0) * 100)
-                readings.append(f"Cooling Fan: {fan_percent}%")
-        except: pass
-        
     journal_path = os.path.join(os.path.dirname(__file__), "journal.txt")
     if os.path.exists(journal_path):
         size = os.path.getsize(journal_path)
@@ -72,9 +40,4 @@ def read_all():
             with open(inbox_path, "w") as f:
                 f.write("")
                 
-    light_path = os.path.join(os.path.dirname(__file__), "light.txt")
-    light_state = open(light_path).read().strip() if os.path.exists(light_path) else "OFF"
-    readings.append(f"Virtual Grow Light: {light_state}")
-    readings.append(get_weather())
-    
     return "\n".join(readings)

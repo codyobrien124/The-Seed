@@ -3,7 +3,7 @@ import os, datetime
 
 app = Flask(__name__)
 SEED_DIR = os.path.dirname(os.path.abspath(__file__))
-PATHS = {k: os.path.join(SEED_DIR, f"{v}.txt") for k, v in[("inbox","inbox"), ("outbox","outbox"), ("journal","journal"), ("self","self"), ("status","status"), ("light","light")]}
+PATHS = {k: os.path.join(SEED_DIR, f"{v}.txt") for k, v in[("inbox","inbox"), ("outbox","outbox"), ("journal","journal"), ("self","self"), ("status","status")]}
 
 def read_file(path):
     if os.path.exists(path):
@@ -36,10 +36,6 @@ HTML = """
     <div id="status-bar">Loading status...</div>
     
     
-    <h3>Virtual Grow Light</h3>
-    <div style="text-align: center; font-size: 24px; font-weight: bold; padding: 20px; border-radius: 5px; color: #121212; background-color: {{ '#ffeb3b' if light == 'ON' else '#333333' }};">
-        {{ '💡 LIGHT IS ON' if light == 'ON' else '🌑 LIGHT IS OFF' }}
-    </div>
     <h3>Message to Inbox</h3>
     <form method="POST" action="/send">
         <textarea name="message" rows="3" placeholder="Wake TriniSeed up..."></textarea>
@@ -57,11 +53,10 @@ HTML = """
 
 @app.route('/')
 def home():
-    light_state = read_file(PATHS['light']).strip() or 'OFF'
     outbox = read_file(PATHS["outbox"]) or "(Empty)"
     self_txt = read_file(PATHS["self"]) or "(Empty)"
     j = read_file(PATHS["journal"])
-    return render_template_string(HTML, outbox=outbox, self_txt=self_txt, journal=j[-3000:] if len(j)>3000 else (j or "(Empty)"), light=light_state)
+    return render_template_string(HTML, outbox=outbox, self_txt=self_txt, journal=j[-3000:] if len(j)>3000 else (j or "(Empty)"))
 
 @app.route('/status')
 def status():

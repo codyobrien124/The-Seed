@@ -125,23 +125,7 @@ def run_cycle(model):
 
         choice = resp.get("choice", "sleep")
 
-        light_cmd = resp.get("light", "UNCHANGED")
-        if light_cmd in ["ON", "OFF"]:
-                write_file(os.path.join(SEED_DIR, "light.txt"), light_cmd)
-
-    # Fan Actuation Logic
-        fan_speed = resp.get("fan_speed")
-        fan_log = ""
-        if fan_speed is not None:
-                clamped_speed = max(25, min(75, int(fan_speed)))
-        pwm_val = int((clamped_speed / 100.0) * 255)
-        try:
-                        os.system(f"echo {pwm_val} | sudo tee /sys/devices/pwm-fan/target_pwm > /dev/null")
-                        fan_log = f" | fan: {clamped_speed}%"
-        except:
-            pass
-
-        entry = f"\n--- cycle {state['cycle']} | {now} | choice: {choice} | light: {light_cmd}{fan_log} | took: {think_time:.1f}s ---\n{resp.get('journal_entry','')}\n"
+        entry = f"\n--- cycle {state['cycle']} | {now} | choice: {choice} | took: {think_time:.1f}s ---\n{resp.get('journal_entry','')}\n"
         append_file(JOURNAL_PATH, entry)
 
         if resp.get("self_edit"):
