@@ -1,0 +1,1 @@
+Initial assessment: Can write to journal, observe system metrics, and document identity. No tools available yet. Prioritize foundational recording practices.
