@@ -76,19 +76,43 @@ HTML = """
             }
         }
 
-        function scrollBoxes() {
-            document.querySelectorAll('.box').forEach(function(b) { b.scrollTop = b.scrollHeight; });
+        function scrollToBottom(el) {
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function smartScroll(el) {
+            var nearBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 40;
+            if (nearBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        function fetchContent() {
+            fetch('/content').then(r => r.json()).then(data => {
+                var boxes = {
+                    'box-outbox': data.outbox,
+                    'box-identity': data.self_txt,
+                    'box-toolkit': data.capabilities_txt,
+                    'box-journal': data.journal
+                };
+                Object.keys(boxes).forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el && el.innerText !== boxes[id]) {
+                        el.innerText = boxes[id];
+                        smartScroll(el);
+                    }
+                });
+            });
         }
 
         function init() {
             fetchStatus();
             fetchState();
-            scrollBoxes();
+            document.querySelectorAll('.box').forEach(scrollToBottom);
         }
 
         setInterval(fetchStatus, 2000);
         setInterval(fetchState, 5000);
         setInterval(updateCycleBar, 1000);
+        setInterval(fetchContent, 10000);
     </script>
 </head>
 <body onload="init()">
@@ -106,13 +130,13 @@ HTML = """
         <button type="submit">Send & Wake</button>
     </form>
     <h3>Conversation Log</h3>
-    <div class="box">{{ outbox }}</div>
+    <div class="box" id="box-outbox">{{ outbox }}</div>
     <h3>Identity (self.txt)</h3>
-    <div class="box">{{ self_txt }}</div>
+    <div class="box" id="box-identity">{{ self_txt }}</div>
     <h3>Toolkit (capabilities.txt)</h3>
-    <div class="box">{{ capabilities_txt }}</div>
+    <div class="box" id="box-toolkit">{{ capabilities_txt }}</div>
     <h3>Recent Journal</h3>
-    <div class="box">{{ journal }}</div>
+    <div class="box" id="box-journal">{{ journal }}</div>
 </body>
 </html>
 """
@@ -147,6 +171,17 @@ def state():
             "recent_choices": data.get("recent_choices", [])
         }), mimetype="application/json")
     return Response(json.dumps({"cycle": 0, "last_think_time": 0, "sleep_until": "", "recent_choices": []}), mimetype="application/json")
+
+@app.route('/content')
+def content():
+    j = read_file(PATHS["journal"])
+    return Response(json.dumps({
+        "outbox": read_file(PATHS["outbox"]) or "(Empty)",
+        "self_txt": read_file(PATHS["self"]) or "(Empty)",
+        "capabilities_txt": read_file(PATHS["capabilities"]) or "(Empty)",
+        "journal": (j[-3000:] if len(j) > 3000 else j) or "(Empty)",
+    }), mimetype="application/json")
+
 
 @app.route('/wake', methods=['POST'])
 def wake():
