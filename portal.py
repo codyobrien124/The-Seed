@@ -29,7 +29,8 @@ HTML = """
         h3 { color: #4caf50; margin-bottom: 5px; }
         #status-bar { background: #2c2c2c; padding: 10px; text-align: center; font-weight: bold; font-size: 1.1em; border-radius: 5px; margin-bottom: 6px; border: 1px solid #4caf50; color: #81c784; }
         #cycle-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; color: #888; border-radius: 5px; margin-bottom: 6px; border: 1px solid #2a2a2a; }
-        #choices-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; border-radius: 5px; margin-bottom: 20px; border: 1px solid #2a2a2a; }
+        #choices-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.85em; border-radius: 5px; margin-bottom: 6px; border: 1px solid #2a2a2a; }
+        #grow-bar { background: #1a1a1a; padding: 6px 10px; text-align: center; font-size: 0.8em; color: #666; border-radius: 5px; margin-bottom: 20px; border: 1px solid #2a2a2a; }
     </style>
     <script>
         var sleepUntil = null;
@@ -85,6 +86,20 @@ HTML = """
             if (nearBottom) el.scrollTop = el.scrollHeight;
         }
 
+        function fetchGrowState() {
+            fetch('/grow_state').then(r => r.json()).then(data => {
+                var bar = document.getElementById('grow-bar');
+                if (!bar || !data.train_count) return;
+                var parts = ['Adapter rank ' + data.current_rank, 'Trained ' + data.train_count + 'x'];
+                if (data.last_loss != null) parts.push('Loss ' + data.last_loss.toFixed(4));
+                if (data.last_train) {
+                    var d = new Date(data.last_train);
+                    parts.push('Last: ' + d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
+                }
+                bar.innerText = parts.join(' | ');
+            });
+        }
+
         function fetchContent() {
             fetch('/content').then(r => r.json()).then(data => {
                 var boxes = {
@@ -106,6 +121,7 @@ HTML = """
         function init() {
             fetchStatus();
             fetchState();
+            fetchGrowState();
             document.querySelectorAll('.box').forEach(scrollToBottom);
         }
 
@@ -113,6 +129,7 @@ HTML = """
         setInterval(fetchState, 5000);
         setInterval(updateCycleBar, 1000);
         setInterval(fetchContent, 10000);
+        setInterval(fetchGrowState, 30000);
     </script>
 </head>
 <body onload="init()">
@@ -120,6 +137,7 @@ HTML = """
     <div id="status-bar">Loading status...</div>
     <div id="cycle-bar">Loading...</div>
     <div id="choices-bar"></div>
+    <div id="grow-bar"></div>
 
     <form method="POST" action="/wake" style="margin-bottom: 10px;">
         <button type="submit" style="background: #1565c0;">Wake Up</button>
@@ -171,6 +189,17 @@ def state():
             "recent_choices": data.get("recent_choices", [])
         }), mimetype="application/json")
     return Response(json.dumps({"cycle": 0, "last_think_time": 0, "sleep_until": "", "recent_choices": []}), mimetype="application/json")
+
+@app.route('/grow_state')
+def grow_state_route():
+    path = os.path.join(SEED_DIR, "grow_state.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+    else:
+        data = {"current_rank": 2, "train_count": 0, "total_entries_trained": 0}
+    return Response(json.dumps(data), mimetype="application/json")
+
 
 @app.route('/content')
 def content():

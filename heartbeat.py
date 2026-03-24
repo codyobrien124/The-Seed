@@ -29,7 +29,9 @@ def append_file(path, content):
     with open(path, "a") as f: f.write(content)
 
 def write_file(path, content):
-    with open(path, "w") as f: f.write(content)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f: f.write(content)
+    os.replace(tmp, path)
 
 def load_state():
     if os.path.exists(STATE_PATH):
@@ -37,7 +39,9 @@ def load_state():
     return {"cycle": 0, "next_heartbeat_minutes": DEFAULT_HB, "last_think_time": 0}
 
 def save_state(state):
-    with open(STATE_PATH, "w") as f: json.dump(state, f, indent=2)
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w") as f: json.dump(state, f, indent=2)
+    os.replace(tmp, STATE_PATH)
 
 def call_llm(prompt, system_prompt, model):
     """Think using Ollama."""

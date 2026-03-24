@@ -247,7 +247,7 @@ def train(rank_up=False):
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
-        torch_dtype=torch.float16,
+        torch_dtype="auto",
         device_map="auto"
     )
 
@@ -314,7 +314,7 @@ def train(rank_up=False):
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=DEFAULT_LR,
-        fp16=True,
+        fp16=torch.cuda.is_available(),
         logging_steps=5,
         save_strategy="no",
         report_to="none",
