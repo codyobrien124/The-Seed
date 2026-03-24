@@ -12,7 +12,7 @@ STATE_PATH = os.path.join(SEED_DIR, "state.json")
 STATUS_PATH = os.path.join(SEED_DIR, "status.txt")
 
 DEFAULT_HB = 30
-DEFAULT_MODEL = "qwen3:4b"
+DEFAULT_MODEL = "qwen3:8b"
 URL = "http://localhost:11434"
 GROW_EVERY = 50  # run grow loop every N cycles
 
@@ -20,9 +20,9 @@ def set_status(msg):
         with open(STATUS_PATH, "w") as f: f.write(msg)
 
 def load_file(path, default=""):
-        if os.path.exists(path):
-                with open(path, "r") as f: return f.read()
-                return default
+    if os.path.exists(path):
+        with open(path, "r") as f: return f.read()
+    return default
 
 def append_file(path, content):
         with open(path, "a") as f: f.write(content)
@@ -39,22 +39,22 @@ def save_state(state):
                     with open(STATE_PATH, "w") as f: json.dump(state, f, indent=2)
 
 def call_llm(prompt, system_prompt, model):
-                        """Think using ollama."""
-                        payload = json.dumps({
-                            "model": model,
-                            "messages":[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "stream": False,
-                            "options": {"temperature": 0.7, "num_predict": 8192, "num_ctx": 8192}
-                        }).encode()
-                        req = urllib.request.Request(f"{URL}/api/chat", data=payload, headers={"Content-Type": "application/json"})
-                        try:
-                                    with urllib.request.urlopen(req, timeout=900) as resp:
-                                                    return json.loads(resp.read())["message"]["content"]
-                        except Exception as e:
-                                    return f'{{"choice":"sleep","journal_entry":"Mind unreachable: {e}","next_heartbeat_minutes":30}}'
+    """Think using Ollama."""
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "stream": False,
+        "options": {"temperature": 0.7, "num_predict": 8192, "num_ctx": 8192}
+    }).encode()
+    req = urllib.request.Request(f"{URL}/api/chat", data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=900) as resp:
+            return json.loads(resp.read())["message"]["content"]
+    except Exception as e:
+        return f'{{"choice":"sleep","journal_entry":"Mind unreachable: {e}","next_heartbeat_minutes":30}}'
 
 def call_mind(prompt, system_prompt):
                         """Think using the local grown mind (adapter + base model)."""
@@ -65,19 +65,19 @@ def call_mind(prompt, system_prompt):
                                 return None
 
 def think(prompt, system_prompt, model):
-        """Try the grown mind first. Fall back to ollama."""
-        try:
-                    import mind
-                    if mind.is_available() and os.path.exists(os.path.join(SEED_DIR, "adapter", "adapter_config.json")):
-                                    set_status(f"🌱 Thinking with grown mind...")
-                                    response = call_mind(prompt, system_prompt)
-                                    if response:
-                                                        return response
-        except ImportError:
-                    pass
-        except Exception as e:
-                print(f"  Grown mind error, falling back to ollama: {e}")
-                return call_llm(prompt, system_prompt, model)
+    """Try the grown mind first. Fall back to LM Studio."""
+    try:
+        import mind
+        if mind.is_available() and os.path.exists(os.path.join(SEED_DIR, "adapter", "adapter_config.json")):
+            set_status("Thinking with grown mind...")
+            response = call_mind(prompt, system_prompt)
+            if response:
+                return response
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"  Grown mind error, falling back to Ollama: {e}")
+    return call_llm(prompt, system_prompt, model)
 
 def maybe_grow(cycle):
         """Run the grow loop if it's time."""
@@ -142,19 +142,19 @@ def run_cycle(model):
         return state
 
 def daemon(model):
-        if not os.path.exists(INBOX_PATH):
-                    write_file(INBOX_PATH, "")
-        while True:
-                state = run_cycle(model)
+    if not os.path.exists(INBOX_PATH):
+        write_file(INBOX_PATH, "")
+    while True:
+        state = run_cycle(model)
         sleep_mins = state["next_heartbeat_minutes"]
         think_time = state.get("last_think_time", 0)
-        set_status(f"💤 Sleeping for {sleep_mins}m (Last thought took: {think_time:.1f}s)")
+        set_status(f"Sleeping for {sleep_mins}m (Last thought took: {think_time:.1f}s)")
         for _ in range(sleep_mins * 60):
-                        if os.path.exists(INBOX_PATH) and os.path.getsize(INBOX_PATH) > 0:
-                                            set_status("⚡ Waking up early (Message received)...")
-                                            time.sleep(2)  # Give UI time to show waking status
-                        break
-        time.sleep(1)
+            if os.path.exists(INBOX_PATH) and os.path.getsize(INBOX_PATH) > 0:
+                set_status("Waking up early (Message received)...")
+                time.sleep(2)
+                break
+            time.sleep(1)
 
 if __name__ == "__main__":
         daemon(DEFAULT_MODEL)
